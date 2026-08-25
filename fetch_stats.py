@@ -1,13 +1,25 @@
 import requests
+
 def get_codeforces_stats(handle):
     url = f"https://codeforces.com/api/user.info?handles={handle}"
-    response = requests.get(url).json()
-    if response["status"] == "OK":
-        user_info = response['result'][0]
-        print(f"User: {user_info.get('handle')}")
-        print(f"Rating: {user_info.get('rating', 'Unrated')}")
-        print(f"Rank: {user_info.get('rank', 'N/A')}")
-    else:
-        print("Failed to fetch user data.")
+    try:
+        response = requests.get(url, timeout=10).json()
+        if response.get("status") == "OK":
+            user_info = response['result'][0]
+            return {
+                "handle": user_info.get("handle"),
+                "rating": user_info.get("rating", 0),
+                "rank": user_info.get("rank", "unrated")
+            }
+        else:
+            print(f"⚠️ Failed to fetch Codeforces data for '{handle}'.")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Codeforces network error: {e}")
+        return None
 
-get_codeforces_stats('tourist')
+if __name__ == "__main__":
+    user_handle = input("Enter Codeforces Handle: ").strip()
+    if user_handle:
+        data = get_codeforces_stats(user_handle)
+        print(data)

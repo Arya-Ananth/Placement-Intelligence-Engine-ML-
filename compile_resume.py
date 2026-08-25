@@ -1,12 +1,15 @@
 import sqlite3
 import subprocess
+import requests
+import os
 from jinja2 import Environment, FileSystemLoader
 
 def fetch_latest_student(student_id):
     conn = sqlite3.connect("upskill_ledger.db")
     cursor = conn.cursor()
+    
     cursor.execute("""
-        SELECT student_id, name, gpa, problems_solved, certifications, placement_score 
+        SELECT student_id, name, gpa, problems_solved, certifications, placement_score, leetcode_username, codeforces_handle 
         FROM student_profiles 
         WHERE student_id = ?
     """, (student_id,))
@@ -24,8 +27,29 @@ def fetch_latest_student(student_id):
         "problems_solved": row[3],
         "certifications": row[4],
         "placement_score": f"{row[5]:.2f}",
-        "leetcode_username": "hrishikesh-yn"
+        "leetcode_username": row[6] if row[6] else "N/A",
+        "codeforces_handle": row[7] if row[7] else "N/A"
     }
+
+def compile_latex_cloud(tex_filename, output_pdf_path):
+    print("🌐 Compiling via Cloud LaTeX Engine...")
+    url = "https://latexonline.cc/compile"
+    
+    try:
+        with open(tex_filename, "rb") as f:
+            response = requests.post(url, files={"file": f}, timeout=25)
+            
+        if response.status_code == 200:
+            with open(output_pdf_path, "wb") as pdf_out:
+                pdf_out.write(response.content)
+            print(f"📄 Successfully created PDF via Cloud: {output_pdf_path}")
+            return True
+        else:
+            print(f"⚠️ Cloud compilation failed with status code {response.status_code}.")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"⚠️ Cloud connection error: {e}")
+        return False
 
 def generate_resume(student_data):
     env = Environment(
@@ -40,18 +64,32 @@ def generate_resume(student_data):
     rendered_tex = template.render(student_data)
     
     tex_filename = f"resume_{student_data['student_id']}.tex"
-    with open(tex_filename, "w") as f:
+    pdf_filename = f"resume_{student_data['student_id']}.pdf"
+    
+    with open(tex_filename, "w", encoding="utf-8") as f:
         f.write(rendered_tex)
         
     print(f"✅ Generated LaTeX file: {tex_filename}")
 
+    # 1. Try local pdflatex first
     try:
-        subprocess.run(["pdflatex", "-interaction=nonstopmode", tex_filename], check=True)
-        print(f"📄 Successfully created PDF: resume_{student_data['student_id']}.pdf")
+        subprocess.run(["pdflatex", "-interaction=nonstopmode", tex_filename], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"📄 Successfully created PDF locally: {pdf_filename}")
+        return
     except (subprocess.SubprocessError, FileNotFoundError):
-        print("⚠️ 'pdflatex' binary not found locally. You can upload the generated .tex file to Overleaf to view the final PDF.")
+        print("⚠️ Local 'pdflatex' binary not found. Falling back to Cloud LaTeX compiler...")
+
+    # 2. Fallback to Cloud LaTeX API
+    success = compile_latex_cloud(tex_filename, pdf_filename)
+    if not success:
+        print("⚠️ Could not generate PDF. The raw .tex file is still available for manual upload to Overleaf.")
 
 if __name__ == "__main__":
-    student = fetch_latest_student(101)
-    if student:
-        generate_resume(student)
+    print("=== PIE Resume Auto-Compiler ===")
+    user_id_input = input("Enter Student ID to compile resume: ").strip()
+    if user_id_input.isdigit():
+        student = fetch_latest_student(int(user_id_input))
+        if student:
+            generate_resume(student)
+    else:
+        print("❌ Please enter a valid numerical Student ID.")
