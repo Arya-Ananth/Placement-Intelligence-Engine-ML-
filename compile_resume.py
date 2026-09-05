@@ -9,7 +9,9 @@ def fetch_latest_student(student_id):
     cursor = conn.cursor()
     
     cursor.execute("""
-        SELECT student_id, name, gpa, problems_solved, certifications, placement_score, leetcode_username, codeforces_handle 
+        SELECT student_id, name, gpa, problems_solved, certifications, 
+               codeforces_rating, skill_score, skills, target_role, placement_score, 
+               leetcode_username, codeforces_handle 
         FROM student_profiles 
         WHERE student_id = ?
     """, (student_id,))
@@ -20,15 +22,28 @@ def fetch_latest_student(student_id):
         print(f"❌ Student ID {student_id} not found in database.")
         return None 
 
+    raw_skills = [s.strip() for s in row[7].split(",") if s.strip()] if row[7] else []
+    
+    languages = [s for s in raw_skills if s in ["C++", "Java", "Python", "JavaScript", "SQL"]]
+    frameworks = [s for s in raw_skills if s in ["React", "Node.js", "FastAPI / Flask", "Docker", "Kubernetes", "AWS / Cloud", "PyTorch", "TensorFlow", "Pandas / NumPy", "Scikit-Learn", "NLP / LLMs"]]
+    core_concepts = [s for s in raw_skills if s in ["DSA", "DBMS", "OS / Networks", "Git / GitHub", "HTML / CSS"]]
+
     return {
         "student_id": row[0],
         "name": row[1],
-        "gpa": row[2],
+        "gpa": f"{row[2]:.2f}",
         "problems_solved": row[3],
         "certifications": row[4],
-        "placement_score": f"{row[5]:.2f}",
-        "leetcode_username": row[6] if row[6] else "N/A",
-        "codeforces_handle": row[7] if row[7] else "N/A"
+        "codeforces_rating": row[5] if row[5] > 0 else "Unrated",
+        "skill_score": f"{row[6]:.1f}",
+        "skills": ", ".join(raw_skills) if raw_skills else "N/A",
+        "languages": ", ".join(languages) if languages else "None",
+        "frameworks": ", ".join(frameworks) if frameworks else "None",
+        "core_concepts": ", ".join(core_concepts) if core_concepts else "None",
+        "target_role": row[8] if row[8] else "Software Engineer",
+        "placement_score": f"{row[9]:.1f}",
+        "leetcode_username": row[10] if row[10] else "N/A",
+        "codeforces_handle": row[11] if row[11] else "N/A"
     }
 
 def compile_latex_cloud(tex_filename, output_pdf_path):
@@ -71,18 +86,16 @@ def generate_resume(student_data):
         
     print(f"✅ Generated LaTeX file: {tex_filename}")
 
-    # 1. Try local pdflatex first
     try:
         subprocess.run(["pdflatex", "-interaction=nonstopmode", tex_filename], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print(f"📄 Successfully created PDF locally: {pdf_filename}")
         return
     except (subprocess.SubprocessError, FileNotFoundError):
-        print("⚠️ Local 'pdflatex' binary not found. Falling back to Cloud LaTeX compiler...")
+        print("⚠️ Local 'pdflatex' not found. Falling back to Cloud LaTeX compiler...")
 
-    # 2. Fallback to Cloud LaTeX API
     success = compile_latex_cloud(tex_filename, pdf_filename)
     if not success:
-        print("⚠️ Could not generate PDF. The raw .tex file is still available for manual upload to Overleaf.")
+        print("⚠️ Could not generate PDF. The raw .tex file is still available.")
 
 if __name__ == "__main__":
     print("=== PIE Resume Auto-Compiler ===")
