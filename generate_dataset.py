@@ -1,5 +1,9 @@
+import sys
 import numpy as np
 import pandas as pd
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 np.random.seed(42)
 n_samples = 1000

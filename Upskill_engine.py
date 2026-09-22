@@ -1,8 +1,15 @@
+import sys
 import sqlite3
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, classification_report
 from fetch_leetcode import get_leetcode_stats
 from fetch_stats import get_codeforces_stats
+
+# Force UTF-8 stdout so emoji in print() don't raise UnicodeEncodeError on Windows (cp1252)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 SKILL_WEIGHTS = {
     
@@ -50,19 +57,34 @@ def init_db():
 def train_model():
     df = pd.read_csv("data.csv")
     feature_cols = ["GPA", "Problems_Solved", "Certifications", "CF_Rating", "Skill_Score"]
-    
+
     # Fallback to standard columns if dataset hasn't been re-generated yet
     available_cols = [c for c in feature_cols if c in df.columns]
     if len(available_cols) < 5:
         available_cols = [c for c in ["GPA", "Problems_Solved", "Certifications"] if c in df.columns]
-    
+
     x = df[available_cols]
     y = df["Placed"]
+
+    # --- Evaluation: hold-out 20% to measure real generalisation ---
+    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
+    eval_model = RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
+    eval_model.fit(x_train, y_train)
+    y_pred = eval_model.predict(x_test)
+
+    print("\n--- [PIE] Model Evaluation (80/20 hold-out) ---")
+    print(f"  Accuracy : {accuracy_score(y_test, y_pred):.4f}")
+    print(f"  Precision: {precision_score(y_test, y_pred, zero_division=0):.4f}")
+    print(f"  Recall   : {recall_score(y_test, y_pred, zero_division=0):.4f}")
+    print("\n" + classification_report(y_test, y_pred, zero_division=0))
+    print("--- [PIE] Production model fitted on full dataset ---\n")
+
+    # Production model: re-fit on the full dataset for maximum coverage
     model = RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
     model.fit(x, y)
     return model, available_cols
 
-def update_student_record(student_id, name, gpa, problems_solved, certifications, cf_rating, skills_list, target_role, model, feature_names, leetcode_username="N/A", codeforces_handle="N/A"):
+def update_student_record(student_id, name, gpa, problems_solved, certifications, cf_rating, skills_list, target_role, model, feature_names, leetcode_username="N/A", codeforces_handle="N/A", role_fit_pct=100.0):
     skill_score = calculate_skill_score(skills_list)
     skills_str = ", ".join(skills_list) if skills_list else "None"
     
@@ -75,7 +97,8 @@ def update_student_record(student_id, name, gpa, problems_solved, certifications
     if "Skill_Score" in feature_names: input_data["Skill_Score"] = skill_score
 
     input_df = pd.DataFrame([input_data], columns=feature_names)
-    score = model.predict_proba(input_df)[0][1] * 100
+    raw_score = model.predict_proba(input_df)[0][1] * 100
+    adjusted_score = raw_score * (0.5 + 0.5 * (role_fit_pct / 100.0))
 
     conn = sqlite3.connect("upskill_ledger.db")
     cursor = conn.cursor()
@@ -99,14 +122,14 @@ def update_student_record(student_id, name, gpa, problems_solved, certifications
             placement_score = excluded.placement_score,
             leetcode_username = excluded.leetcode_username,
             codeforces_handle = excluded.codeforces_handle
-    ''', (student_id, name, gpa, problems_solved, certifications, cf_rating, skill_score, skills_str, target_role, score, leetcode_username, codeforces_handle))
+    ''', (student_id, name, gpa, problems_solved, certifications, cf_rating, skill_score, skills_str, target_role, adjusted_score, leetcode_username, codeforces_handle))
     
     conn.commit()
     conn.close()
     print(f"✅ Record saved in Upskill Ledger for {name} (ID: {student_id})")
-    print(f"📊 Placement Probability Score: {score:.2f}%\n")
+    print(f"Raw ML Score: {raw_score:.2f}% -> Role-Fit Adjusted: {adjusted_score:.2f}%\n")
 
-def sync_student_profile(student_id, name, gpa, certifications, skills_list, target_role, leetcode_username, codeforces_handle, model, feature_names):
+def sync_student_profile(student_id, name, gpa, certifications, skills_list, target_role, leetcode_username, codeforces_handle, model, feature_names, role_fit_pct=100.0):
     print(f"\n--- 🔄 Fetching live platform data for {name} ---")
     
     # 1. Fetch LeetCode stats
@@ -115,6 +138,8 @@ def sync_student_profile(student_id, name, gpa, certifications, skills_list, tar
     
     # 2. Fetch Codeforces stats
     cf_stats = get_codeforces_stats(codeforces_handle) if codeforces_handle else None
+    # fetch_stats returns None (not 0) when the field is absent, so isinstance(..., int)
+    # correctly distinguishes "truly unrated / no data" (None) from a real rating of 0.
     cf_rating = cf_stats["rating"] if (cf_stats and isinstance(cf_stats.get("rating"), int)) else 0
 
     print(f"📈 Sync Summary -> Problems Solved: {live_problems} | Codeforces Rating: {cf_rating} | Skills Tagged: {len(skills_list)}")
@@ -131,7 +156,8 @@ def sync_student_profile(student_id, name, gpa, certifications, skills_list, tar
         model=model,
         feature_names=feature_names,
         leetcode_username=leetcode_username,
-        codeforces_handle=codeforces_handle
+        codeforces_handle=codeforces_handle,
+        role_fit_pct=role_fit_pct
     )
 
 if __name__ == "__main__":

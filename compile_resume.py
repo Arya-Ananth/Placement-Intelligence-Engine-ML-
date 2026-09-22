@@ -34,7 +34,7 @@ def fetch_latest_student(student_id):
         "gpa": f"{row[2]:.2f}",
         "problems_solved": row[3],
         "certifications": row[4],
-        "codeforces_rating": row[5] if row[5] > 0 else "Unrated",
+        "codeforces_rating": row[5] if (row[5] or 0) > 0 else "Unrated",
         "skill_score": f"{row[6]:.1f}",
         "skills": ", ".join(raw_skills) if raw_skills else "N/A",
         "languages": ", ".join(languages) if languages else "None",
@@ -66,7 +66,9 @@ def compile_latex_cloud(tex_filename, output_pdf_path):
         print(f"⚠️ Cloud connection error: {e}")
         return False
 
-def generate_resume(student_data):
+def generate_resume(student_data, allow_cloud_compile=True):
+    os.makedirs("resumes", exist_ok=True)
+
     env = Environment(
         loader=FileSystemLoader("."),
         block_start_string='(\\',
@@ -74,28 +76,41 @@ def generate_resume(student_data):
         variable_start_string='((',
         variable_end_string='))'
     )
-    
+
     template = env.get_template("resume_template.tex")
     rendered_tex = template.render(student_data)
-    
-    tex_filename = f"resume_{student_data['student_id']}.tex"
-    pdf_filename = f"resume_{student_data['student_id']}.pdf"
-    
+
+    tex_filename = os.path.join("resumes", f"resume_{student_data['student_id']}.tex")
+    pdf_filename = os.path.join("resumes", f"resume_{student_data['student_id']}.pdf")
+
     with open(tex_filename, "w", encoding="utf-8") as f:
         f.write(rendered_tex)
-        
-    print(f"✅ Generated LaTeX file: {tex_filename}")
+
+    print(f"[PIE] Generated LaTeX file: {tex_filename}")
 
     try:
-        subprocess.run(["pdflatex", "-interaction=nonstopmode", tex_filename], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        print(f"📄 Successfully created PDF locally: {pdf_filename}")
+        subprocess.run(
+            ["pdflatex", "-interaction=nonstopmode", "-output-directory=resumes", tex_filename],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        print(f"[PIE] Successfully created PDF locally: {pdf_filename}")
         return
     except (subprocess.SubprocessError, FileNotFoundError):
-        print("⚠️ Local 'pdflatex' not found. Falling back to Cloud LaTeX compiler...")
+        print("[PIE] Local 'pdflatex' not found.")
 
+    if not allow_cloud_compile:
+        print("[PIE] Cloud compilation is disabled (allow_cloud_compile=False). The raw .tex file is available.")
+        return
+
+    print(
+        "\n[PIE] WARNING: No local LaTeX install found.\n"
+        "  Your resume data (name, GPA, target role, etc.) will be uploaded to\n"
+        "  latexonline.cc for cloud compilation.\n"
+        "  Pass allow_cloud_compile=False to generate_resume() to disable this.\n"
+    )
     success = compile_latex_cloud(tex_filename, pdf_filename)
     if not success:
-        print("⚠️ Could not generate PDF. The raw .tex file is still available.")
+        print("[PIE] Could not generate PDF. The raw .tex file is still available.")
 
 if __name__ == "__main__":
     print("=== PIE Resume Auto-Compiler ===")

@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-from Upskill_engine import init_db, train_model, sync_student_profile, calculate_skill_score
+from Upskill_engine import init_db, train_model, sync_student_profile, calculate_skill_score, SKILL_WEIGHTS
 from compile_resume import fetch_latest_student, generate_resume
 
 # Page layout configuration
@@ -53,13 +53,6 @@ with st.sidebar:
 st.markdown('<div class="hero-title">Placement Intelligence Engine</div>', unsafe_allow_html=True)
 st.markdown('<div class="hero-subtitle">Automated competitive programming sync, skill matrix quantification, ML readiness scoring, and dynamic ATS resume compilation.</div>', unsafe_allow_html=True)
 
-TECH_SKILL_OPTIONS = [
-    "DSA", "C++", "Java", "Python", "SQL", "DBMS", "OS / Networks",
-    "React", "Node.js", "FastAPI / Flask", "Docker", "Kubernetes", "AWS / Cloud",
-    "PyTorch", "TensorFlow", "Pandas / NumPy", "Scikit-Learn", "NLP / LLMs",
-    "Git / GitHub", "HTML / CSS", "JavaScript"
-]
-
 ROLE_BENCHMARKS = {
     "AI / GenAI & LLM Application Engineer": ["Python", "LangChain", "LlamaIndex", "RAG Pipelines", "Vector DBs", "PyTorch", "Prompt Engineering", "Hugging Face"],
     "Autonomous AI Agent Developer": ["Python", "LangGraph", "CrewAI", "AutoGen", "FastAPI", "Vector DBs", "Prompt Engineering"],
@@ -95,6 +88,20 @@ ROLE_BENCHMARKS = {
 
 TECH_SKILL_OPTIONS = sorted(list(SKILL_WEIGHTS.keys()))
 
+# --- Startup integrity check: every benchmark skill must exist in SKILL_WEIGHTS ---
+_missing = [
+    (role, skill)
+    for role, skills in ROLE_BENCHMARKS.items()
+    for skill in skills
+    if skill not in SKILL_WEIGHTS
+]
+if _missing:
+    _detail = "; ".join(f"role '{r}' -> skill '{s}'" for r, s in _missing)
+    raise ValueError(
+        f"[PIE] ROLE_BENCHMARKS contains skills not found in SKILL_WEIGHTS "
+        f"(typo will silently zero out role-fit %). Mismatches: {_detail}"
+    )
+
 col_left, col_right = st.columns([1, 1], gap="large")
 
 with col_left:
@@ -104,7 +111,7 @@ with col_left:
         with f_id:
             student_id = st.number_input("Student ID / Roll No", min_value=1, value=101, step=1)
         with f_name:
-            name = st.text_input("Full Name", value="Abilash Prabakar")
+            name = st.text_input("Full Name", value="", placeholder="e.g. Jane Doe")
 
         f_gpa, f_certs = st.columns(2)
         with f_gpa:
@@ -125,15 +132,19 @@ with col_left:
 
         f_lc, f_cf = st.columns(2)
         with f_lc:
-            leetcode_username = st.text_input("LeetCode Username", value="Abilash_cit_codepod")
+            leetcode_username = st.text_input("LeetCode Username", value="", placeholder="your_leetcode_handle")
         with f_cf:
-            codeforces_handle = st.text_input("Codeforces Handle (optional)", value="abicode_pod")
+            codeforces_handle = st.text_input("Codeforces Handle (optional)", value="", placeholder="your_cf_handle")
 
         submit_btn = st.form_submit_button("🚀 Sync Profile & Evaluate Readiness", use_container_width=True)
 
 if submit_btn:
     with col_right:
         st.subheader("📊 Live Evaluation & Skill Matrix")
+        benchmark_skills = ROLE_BENCHMARKS[target_role]
+        matched_skills = [s for s in selected_skills if s in benchmark_skills]
+        role_fit_pct = round((len(matched_skills) / len(benchmark_skills)) * 100, 1)
+
         with st.spinner("Fetching platform stats and running 5-feature Random Forest evaluation..."):
             sync_student_profile(
                 student_id=student_id,
@@ -145,20 +156,18 @@ if submit_btn:
                 leetcode_username=leetcode_username,
                 codeforces_handle=codeforces_handle,
                 model=st.session_state.model,
-                feature_names=st.session_state.features
+                feature_names=st.session_state.features,
+                role_fit_pct=role_fit_pct
             )
             student = fetch_latest_student(student_id)
 
         if student:
             score = float(student["placement_score"])
             live_skill_score = calculate_skill_score(selected_skills)
-            benchmark_skills = ROLE_BENCHMARKS[target_role]
-            matched_skills = [s for s in selected_skills if s in benchmark_skills]
-            role_fit_pct = round((len(matched_skills) / len(benchmark_skills)) * 100, 1)
             m1, m2, m3 = st.columns(3)
             m1.metric("Problems Solved", student["problems_solved"])
-            m2.metric("Cumulative GPA", f"{student['gpa']:.2f}")
-            m3.metric("CF Contest Rating", student["codeforces_rating"] if student["codeforces_rating"] > 0 else "Unrated")
+            m2.metric("Cumulative GPA", student['gpa'])
+            m3.metric("CF Contest Rating", student["codeforces_rating"] if student["codeforces_rating"] != "Unrated" else "Unrated")
 
             k1, k2 = st.columns(2)
             k1.metric("Skill Stack Score", f"{live_skill_score} / 100")
@@ -176,8 +185,8 @@ if submit_btn:
 
             generate_resume(student)
 
-            pdf_path = f"resume_{student_id}.pdf"
-            tex_path = f"resume_{student_id}.tex"
+            pdf_path = os.path.join("resumes", f"resume_{student_id}.pdf")
+            tex_path = os.path.join("resumes", f"resume_{student_id}.tex")
 
             st.divider()
             st.subheader("📄 Resume Generation")

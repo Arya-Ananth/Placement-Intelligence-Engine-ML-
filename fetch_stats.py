@@ -8,7 +8,10 @@ def get_codeforces_stats(handle):
             user_info = response['result'][0]
             return {
                 "handle": user_info.get("handle"),
-                "rating": user_info.get("rating", 0),
+                # Default to None (not 0) so callers can distinguish "no rating data"
+                # from a genuine rating of 0. The isinstance(..., int) guard in
+                # Upskill_engine.sync_student_profile() correctly rejects None.
+                "rating": user_info.get("rating", None),
                 "rank": user_info.get("rank", "unrated")
             }
         else:
