@@ -5,11 +5,9 @@ import requests
 import os
 from jinja2 import Environment, FileSystemLoader
 
-# Force UTF-8 stdout so emoji in print() don't raise UnicodeEncodeError on Windows (cp1252)
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
-# ReportLab imports for 100% reliable local PDF generation
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -59,10 +57,6 @@ def fetch_latest_student(student_id):
     }
 
 def compile_pdf_reportlab(student_data, output_pdf_path):
-    """
-    Generates a crisp, professional ATS-friendly PDF resume using ReportLab.
-    Runs 100% locally in Python without external LaTeX dependencies.
-    """
     print(f"📄 Building ATS PDF Resume locally via ReportLab for {student_data['name']}...")
     
     doc = SimpleDocTemplate(
@@ -76,11 +70,10 @@ def compile_pdf_reportlab(student_data, output_pdf_path):
 
     styles = getSampleStyleSheet()
 
-    # Custom typography & colors
-    primary_color = colors.HexColor("#0F172A")    # Dark slate
-    accent_color = colors.HexColor("#2563EB")     # Royal blue
-    text_dark = colors.HexColor("#334155")        # Body charcoal
-    bg_light = colors.HexColor("#F8FAFC")         # Light blue-gray
+    primary_color = colors.HexColor("#0F172A")   
+    accent_color = colors.HexColor("#2563EB")     
+    text_dark = colors.HexColor("#334155")        
+    bg_light = colors.HexColor("#F8FAFC")         
 
     title_style = ParagraphStyle(
         'DocTitle',
@@ -140,7 +133,6 @@ def compile_pdf_reportlab(student_data, output_pdf_path):
 
     story = []
 
-    # --- Header Section ---
     name_str = student_data['name'].upper()
     role_str = student_data['target_role'].upper()
     
@@ -154,7 +146,6 @@ def compile_pdf_reportlab(student_data, output_pdf_path):
     story.append(Spacer(1, 8))
     story.append(HRFlowable(width="100%", thickness=1.5, color=accent_color, spaceBefore=0, spaceAfter=8))
 
-    # --- Metrics & Score Summary Table ---
     story.append(Paragraph("PLACEMENT READINESS & BENCHMARK SUMMARY", section_heading))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=0, spaceAfter=6))
     
@@ -196,7 +187,6 @@ def compile_pdf_reportlab(student_data, output_pdf_path):
     story.append(metrics_table)
     story.append(Spacer(1, 10))
 
-    # --- Technical Skills Matrix ---
     story.append(Paragraph("TECHNICAL COMPETENCIES & STACK MATRIX", section_heading))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=0, spaceAfter=6))
 
@@ -217,7 +207,6 @@ def compile_pdf_reportlab(student_data, output_pdf_path):
     story.append(skills_table)
     story.append(Spacer(1, 10))
 
-    # --- Automated Evaluation & Career Action Plan ---
     story.append(Paragraph("AUTOMATED EVALUATION & STRATEGIC RECOMMENDATIONS", section_heading))
     story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#CBD5E1"), spaceBefore=0, spaceAfter=6))
 
@@ -269,7 +258,7 @@ def compile_latex_cloud(tex_filename, output_pdf_path):
 def generate_resume(student_data, allow_cloud_compile=True):
     os.makedirs("resumes", exist_ok=True)
 
-    # 1. Render LaTeX template (.tex)
+    #Render LaTeX template (.tex)
     env = Environment(
         loader=FileSystemLoader("."),
         block_start_string='(\\',
@@ -289,14 +278,14 @@ def generate_resume(student_data, allow_cloud_compile=True):
 
     print(f"[PIE] Generated LaTeX source file: {tex_filename}")
 
-    # 2. Try Local ReportLab PDF generation first (Guaranteed 100% success locally without pdflatex)
+    #Try Local ReportLab PDF generation first (Guaranteed 100% success locally without pdflatex)
     try:
         compile_pdf_reportlab(student_data, pdf_filename)
         return pdf_filename
     except Exception as e:
         print(f"⚠️ ReportLab compilation error: {e}")
 
-    # 3. Fallback to pdflatex if available
+    # 3.Fallback to pdflatex if available
     try:
         subprocess.run(
             ["pdflatex", "-interaction=nonstopmode", "-output-directory=resumes", tex_filename],
@@ -307,7 +296,7 @@ def generate_resume(student_data, allow_cloud_compile=True):
     except (subprocess.SubprocessError, FileNotFoundError):
         print("[PIE] Local 'pdflatex' not found.")
 
-    # 4. Fallback to cloud compile if allowed
+    # 4.Fallback to cloud compile if allowed
     if allow_cloud_compile:
         success = compile_latex_cloud(tex_filename, pdf_filename)
         if success:
