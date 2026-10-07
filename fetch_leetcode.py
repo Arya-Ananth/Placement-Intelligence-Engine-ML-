@@ -70,12 +70,9 @@ def get_leetcode_stats(username):
         return result
 
     except requests.exceptions.RequestException as e:
-        # Covers network errors, timeouts, DNS failures, etc.
         print(f"Network error while fetching LeetCode stats: {e}")
         return None
     except ValueError as e:
-        # Covers cases where the response wasn't valid JSON at all
-        # (e.g. blocked by a firewall/proxy and returned an HTML page instead).
         print(f"Could not parse LeetCode response as JSON: {e}")
         return None
 
