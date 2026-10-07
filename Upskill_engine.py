@@ -57,16 +57,12 @@ def init_db():
 def train_model():
     df = pd.read_csv("data.csv")
     feature_cols = ["GPA", "Problems_Solved", "Certifications", "CF_Rating", "Skill_Score"]
-
-    # Fallback to standard columns if dataset hasn't been re-generated yet
     available_cols = [c for c in feature_cols if c in df.columns]
     if len(available_cols) < 5:
         available_cols = [c for c in ["GPA", "Problems_Solved", "Certifications"] if c in df.columns]
 
     x = df[available_cols]
     y = df["Placed"]
-
-    # --- Evaluation: hold-out 20% to measure real generalisation ---
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)
     eval_model = RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
     eval_model.fit(x_train, y_train)
@@ -79,7 +75,6 @@ def train_model():
     print("\n" + classification_report(y_test, y_pred, zero_division=0))
     print("--- [PIE] Production model fitted on full dataset ---\n")
 
-    # Production model: re-fit on the full dataset for maximum coverage
     model = RandomForestClassifier(n_estimators=100, max_depth=6, random_state=42)
     model.fit(x, y)
     return model, available_cols
@@ -88,7 +83,6 @@ def update_student_record(student_id, name, gpa, problems_solved, certifications
     skill_score = calculate_skill_score(skills_list)
     skills_str = ", ".join(skills_list) if skills_list else "None"
     
-    # Build feature row matching trained columns
     input_data = {}
     if "GPA" in feature_names: input_data["GPA"] = gpa
     if "Problems_Solved" in feature_names: input_data["Problems_Solved"] = problems_solved
@@ -132,14 +126,10 @@ def update_student_record(student_id, name, gpa, problems_solved, certifications
 def sync_student_profile(student_id, name, gpa, certifications, skills_list, target_role, leetcode_username, codeforces_handle, model, feature_names, role_fit_pct=100.0):
     print(f"\n--- 🔄 Fetching live platform data for {name} ---")
     
-    # 1. Fetch LeetCode stats
     lc_stats = get_leetcode_stats(leetcode_username) if leetcode_username else None
     live_problems = lc_stats["total"] if lc_stats else 0
     
-    # 2. Fetch Codeforces stats
     cf_stats = get_codeforces_stats(codeforces_handle) if codeforces_handle else None
-    # fetch_stats returns None (not 0) when the field is absent, so isinstance(..., int)
-    # correctly distinguishes "truly unrated / no data" (None) from a real rating of 0.
     cf_rating = cf_stats["rating"] if (cf_stats and isinstance(cf_stats.get("rating"), int)) else 0
 
     print(f"📈 Sync Summary -> Problems Solved: {live_problems} | Codeforces Rating: {cf_rating} | Skills Tagged: {len(skills_list)}")
